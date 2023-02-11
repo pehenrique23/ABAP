@@ -1,0 +1,34 @@
+* Bloqueia tabela p/ escrita para evitar inconsistência
+  WHILE l_aux = 'X'.
+    CALL FUNCTION 'ENQUEUE_EZSDT428'
+      EXPORTING
+        mode_zsdt428   = 'E'
+        mandt          = sy-mandt
+        tpfila         = i_tpfila
+        dtcriac        = vl_data
+        x_tpfila       = ' '
+        x_dtcriac      = ' '
+        _scope         = '2'
+        _wait          = ' '
+        _collect       = ' '
+      EXCEPTIONS
+        foreign_lock   = 1
+        system_failure = 2
+        OTHERS         = 3.
+    IF sy-subrc = 0.
+      CLEAR l_aux.
+    ENDIF.
+  ENDWHILE.
+
+* Libera tabela para escrita
+  CALL FUNCTION 'DEQUEUE_EZSDT428'
+    EXPORTING
+      mode_zsdt428 = 'E'
+      mandt        = sy-mandt
+      tpfila       = i_tpfila
+      dtcriac      = vl_data
+      x_tpfila     = ' '
+      x_dtcriac    = ' '
+      _scope       = '3'
+      _synchron    = ' '
+      _collect     = ' '.
