@@ -1,0 +1,124 @@
+ FORM f_envia_arq_csv TABLES p_lt_email_copia USING vl_subjetc vl_recep.
+* -> Begin - TSB/SCTASK0109671 - PHZ 19.09.2022
+    DATA: lr_document_x   TYPE REF TO cl_document_bcs,
+          lr_send_request TYPE REF TO cl_bcs,
+          lr_sender       TYPE REF TO cl_sapuser_bcs,
+          lr_recipient    TYPE REF TO if_recipient_bcs.
+
+    DATA: lv_lines       TYPE i,
+          lv_size        TYPE sood-objlen,
+          lv_txt         TYPE string,
+          lv_filename_x  TYPE sood-objdes,
+          vl_copy        TYPE adr6-smtp_addr,
+          vl_sent_to_all TYPE os_boolean,
+          lv_ekpo_menge  TYPE char10,
+          lv_netpr       TYPE char08,
+          lv_netpr2      TYPE char08,
+          lv_tot_pedido  TYPE char10.
+
+    DATA: ls_line        TYPE soli,
+          lt_line        TYPE TABLE OF soli,
+          lt_content     TYPE TABLE OF soli_tab,
+          lt_email_copia TYPE tyt_email.
+
+    CONSTANTS: lc_cnpj(4)         VALUE 'CNPJ',
+               lc_item(4)         VALUE 'Item',
+               lc_desc(25)        VALUE 'Descr. do Material',
+               lc_ped(6)          VALUE 'Pedido',
+               lc_qtd(10)         VALUE 'Quantidade',
+               lc_pr_uni(15)      VALUE 'Preco Unitario',
+               lc_pr_uni_2(26)    VALUE 'Preco Unitario com ICMS',
+               lc_depar(12)       VALUE 'Departamento',
+               lc_email(6)        VALUE 'E-mail',
+               lc_vlr_tot_ped(24) VALUE 'Valor Total do Pedido'.
+
+    lt_email_copia[] = p_lt_email_copia[].
+
+***************************
+* Cabeçalho arquivo .CSV  *
+***************************
+    CONCATENATE lc_cnpj lc_item lc_desc lc_ped lc_qtd lc_pr_uni
+    lc_pr_uni_2 lc_depar lc_email lc_vlr_tot_ped INTO ls_line-line SEPARATED BY ';'.
+    APPEND ls_line TO lt_line.
+
+***************************
+* Corpo arquivo .CSV      *
+***************************
+    LOOP AT tg_itens_pedido INTO DATA(ls_itens_pedido).
+      MOVE: ls_itens_pedido-ekpo_menge TO lv_ekpo_menge,
+            ls_itens_pedido-netpr      TO lv_netpr,
+            ls_itens_pedido-netpr2     TO lv_netpr2,
+            zsmm_form_pedido_adic-tot_pedido TO lv_tot_pedido.
+      CONDENSE: lv_ekpo_menge NO-GAPS,
+                lv_netpr      NO-GAPS,
+                lv_netpr2     NO-GAPS,
+                lv_tot_pedido NO-GAPS.
+      CONCATENATE "zsmm_form_pedido_fornecedor-stcd1       "CNPJ
+                  zsmm_form_pedido_faturamento-cgc_number "CNPJ
+                  ls_itens_pedido-ebelp                 "Item
+                  ls_itens_pedido-material              "Descrição do Material
+                  zsmm_form_pedido_adic-ebeln           "Pedido
+                  lv_ekpo_menge                         "Quantidade
+                  lv_netpr                              "Preço unitário sem ICMS
+                  lv_netpr2                             "Preço unitário com ICMS
+                  zsmm_form_pedido_entrega-departamento "Departamento
+                  zsmm_form_pedido_entrega-stmp_addr    "Email
+                  lv_tot_pedido                         "Valor total do pedido
+                  INTO ls_line-line SEPARATED BY ';'.
+      CONCATENATE cl_abap_char_utilities=>newline ls_line-line INTO ls_line-line.
+      APPEND ls_line TO lt_line.
+      CLEAR ls_line.
+    ENDLOOP.
+
+    lr_document_x = cl_document_bcs=>create_document(
+                              i_type    = 'RAW'
+*                                    i_text    = i_content[]
+                              i_subject = vl_subjetc ).
+
+    CONCATENATE ekko-ebeln '.CSV' INTO lv_filename_x.
+
+    DESCRIBE TABLE lt_line LINES lv_lines.
+    lv_size = ( 255 * lv_lines ) * 2.
+*    lv_size = 200.
+
+    CALL METHOD lr_document_x->add_attachment
+      EXPORTING
+        i_attachment_type    = 'CSV'   "For CSV file Extension
+        i_attachment_size    = lv_size
+        i_attachment_subject = lv_filename_x
+        i_att_content_text   = lt_line[].
+
+*Create the send request
+    lr_send_request = cl_bcs=>create_persistent( ).
+
+* ADD document TO send REQUEST
+    lr_send_request->set_document( lr_document_x ).
+
+    lr_sender = cl_sapuser_bcs=>create( ekko-ernam ).
+    CALL METHOD lr_send_request->set_sender
+      EXPORTING
+        i_sender = lr_sender.
+
+*CREATE recipient AND ADD to SEND REQUEST
+    lr_recipient = cl_cam_address_bcs=>create_internet_address( vl_recep ).
+    lr_send_request->add_recipient( i_recipient = lr_recipient ).
+
+*ADD E-MAIL COPY
+*    LOOP AT lt_email_copia INTO DATA(wa_email_copia).
+*      IF wa_email_copia-email IS NOT INITIAL.
+*        vl_copy = wa_email_copia-email.
+*        lr_recipient = cl_cam_address_bcs=>create_internet_address( vl_copy ).
+*        lr_send_request->add_recipient(
+*          EXPORTING
+*            i_recipient     = lr_recipient
+*            i_copy          = abap_true ).
+*      ENDIF.
+*    ENDLOOP.
+
+*Send document
+    vl_sent_to_all = lr_send_request->send( i_with_error_screen = 'X' ).
+    IF vl_sent_to_all = 'X'.
+      WRITE text-003.
+    ENDIF.
+* <- End - TSB/SCTASK0109671 - PHZ 19.09.2022
+  ENDFORM.
