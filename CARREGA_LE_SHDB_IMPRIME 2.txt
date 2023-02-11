@@ -1,0 +1,221 @@
+*&---------------------------------------------------------------------*
+*& Report  ZTST
+*&
+*&---------------------------------------------------------------------*
+REPORT ztst.
+
+*Tipos Global
+TYPES: BEGIN OF ty_dados,
+         lifnr     TYPE komg-lifnr,
+         ekorg     TYPE komg-ekorg,
+         werks     TYPE komg-werks,
+         matnr     TYPE komg-matnr,
+         kbetr(13) TYPE c,
+         datab     TYPE sy-datum,
+         datbi     TYPE sy-datum,
+       END OF ty_dados,
+
+       BEGIN OF ty_carga,
+         line TYPE string,
+       END OF ty_carga,
+
+       BEGIN OF ty_log,
+         lifnr     TYPE komg-lifnr,
+         ekorg     TYPE komg-ekorg,
+         werks     TYPE komg-werks,
+         kbetr(13) TYPE c,
+         matnr     TYPE komg-matnr,
+         datab     TYPE sy-datum,
+         datbi     TYPE sy-datum,
+         mssg      TYPE natxt,
+       END OF ty_log.
+
+*Tabela interna global
+DATA: gt_carga   TYPE TABLE OF ty_carga,
+      gt_dados   TYPE TABLE OF ty_dados,
+      gt_bdcdata TYPE STANDARD TABLE OF bdcdata,
+      gt_message TYPE TABLE OF bdcmsgcoll,
+      gt_log     TYPE TABLE OF ty_log.
+
+*Estrutura global
+DATA: gs_dados   TYPE ty_dados,
+      gs_bdcdata TYPE bdcdata,
+      gs_log     TYPE ty_log.
+
+*Macro
+DEFINE bdc_add.
+  CLEAR gs_bdcdata.
+  gs_bdcdata-dynbegin = &1.
+  IF &1 EQ 'X'.
+    gs_bdcdata-program = &2.
+    gs_bdcdata-dynpro = &3.
+  ELSE.
+    gs_bdcdata-fnam = &2.
+    gs_bdcdata-fval = &3.
+  ENDIF.
+  APPEND gs_bdcdata TO gt_bdcdata.
+END-OF-DEFINITION.
+
+*Tela de Seleção
+PARAMETERS: p_file TYPE localfile DEFAULT 'C:\Users\Murilo Pedrico\Desktop\VK11_arquivo.csv' OBLIGATORY.
+
+*POPUP Sel. Arquivo
+AT SELECTION-SCREEN ON VALUE-REQUEST FOR p_file.
+  CALL FUNCTION 'KD_GET_FILENAME_ON_F4'
+    EXPORTING
+      static    = 'X'
+    CHANGING
+      file_name = p_file.
+
+START-OF-SELECTION.
+  PERFORM z_buscardados.
+  PERFORM z_tratardados.
+  PERFORM z_processardados.
+  PERFORM z_imprimirdados.
+
+*&---------------------------------------------------------------------*
+*&      Form  Z_BUSCARDADOS
+*&---------------------------------------------------------------------*
+FORM z_buscardados .
+
+  DATA: lv_file TYPE string.
+
+  lv_file = p_file.
+
+  CALL FUNCTION 'GUI_UPLOAD'
+    EXPORTING
+      filename                = lv_file
+      filetype                = 'ASC'
+      has_field_separator     = ';'
+    TABLES
+      data_tab                = gt_carga
+    EXCEPTIONS
+      file_open_error         = 1
+      file_read_error         = 2
+      no_batch                = 3
+      gui_refuse_filetransfer = 4
+      invalid_type            = 5
+      no_authority            = 6
+      unknown_error           = 7
+      bad_data_format         = 8
+      header_not_allowed      = 9
+      separator_not_allowed   = 10
+      header_too_long         = 11
+      unknown_dp_error        = 12
+      access_denied           = 13
+      dp_out_of_memory        = 14
+      disk_full               = 15
+      dp_timeout              = 16
+      OTHERS                  = 17.
+
+  IF sy-subrc <> 0.
+
+  ENDIF.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  Z_TRATARDADOS
+*&---------------------------------------------------------------------*
+FORM z_tratardados .
+
+  LOOP AT gt_carga INTO DATA(gs_carga).
+    SPLIT gs_carga-line AT ';' INTO gs_dados-lifnr
+                                    gs_dados-ekorg
+                                    gs_dados-werks
+                                    gs_dados-matnr
+                                    gs_dados-kbetr
+                                    gs_dados-datab
+                                    gs_dados-datbi.
+
+    APPEND gs_dados TO gt_dados.
+  ENDLOOP.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  FILL_SHDB
+*&---------------------------------------------------------------------*
+FORM fill_shdb USING gs_dados TYPE ty_dados.
+
+  DATA: lv_mode TYPE c VALUE 'N'.
+
+  bdc_add 'X' 'SAPMV13A'        '0100'.
+  bdc_add ''  'BDC_OKCODE'      '/00'.
+  bdc_add ''  'RV13A-KSCHL'     'PB00'.
+
+  bdc_add 'X' 'SAPLV14A'        '0100'.
+  bdc_add ''  'BDC_OKCODE'      '=WEIT'.
+  bdc_add ''  'RV130-SELKZ(07)' 'X'.
+
+  bdc_add 'X' 'SAPMV13A'        '1017'.
+  bdc_add ''  'BDC_OKCODE'      '/00'.
+  bdc_add ''  'KOMG-LIFNR'      gs_dados-lifnr.
+  bdc_add ''  'KOMG-MATNR'      gs_dados-matnr.
+  bdc_add ''  'KOMG-EKORG'      gs_dados-ekorg.
+  bdc_add ''  'KOMG-WERKS'      gs_dados-werks.
+
+  bdc_add ''  'KOMG-ESOKZ(01)'  '0'.
+  bdc_add ''  'KONP-KBETR(01)'  gs_dados-kbetr.
+  bdc_add ''  'KONP-KOMWA(01)'  'BRL'.
+  bdc_add ''  'KONP-KPEIN(01)'  '1'.
+  bdc_add ''  'KONP-KMEIN(01)'  'UN'.
+  bdc_add ''  'RV13A-DTAB(01)'   gs_dados-datab.
+  bdc_add ''  'RV13A-DTBI(01)'   gs_dados-datbi.
+
+  bdc_add 'X' 'SAPMV13A'        '1017'.
+  bdc_add ''  'BDC_OKCODE'      '=SICH'.
+
+  CALL TRANSACTION 'MEK1' USING gt_bdcdata MESSAGES INTO gt_message MODE lv_mode.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  Z_PROCESSARDADOS
+*&---------------------------------------------------------------------*
+FORM z_processardados .
+  LOOP AT gt_dados INTO gs_dados.
+    CLEAR gt_message[].
+    CLEAR gs_log.
+    PERFORM fill_shdb USING gs_dados.
+    PERFORM z_gravalog USING gs_dados.
+  ENDLOOP.
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  GRAVA_LOG
+*&---------------------------------------------------------------------*
+FORM z_gravalog USING gs_dados TYPE ty_dados.
+  DATA lv_message TYPE natxt.
+
+  READ TABLE gt_message INTO DATA(gs_message) WITH KEY msgid = 'VK'.
+  IF sy-subrc IS INITIAL.
+    CALL FUNCTION 'MESSAGE_TEXT_BUILD'
+      EXPORTING
+        msgid               = gs_message-msgid
+        msgnr               = gs_message-msgnr
+      IMPORTING
+        message_text_output = lv_message.
+
+    gs_log-mssg  = lv_message.
+  ELSE.
+    gs_log-mssg  = 'Ocorreu Erros'.
+  ENDIF.
+
+  gs_log-lifnr = gs_dados-lifnr.
+  gs_log-werks = gs_dados-werks.
+  gs_log-matnr = gs_dados-matnr.
+
+  APPEND gs_log TO gt_log.
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*&      Form  Z_IMPRIMIRDADOS
+*&---------------------------------------------------------------------*
+FORM z_imprimirdados .
+  cl_demo_output=>display( gt_log ).
+ENDFORM.
+
+***********************************************************************            
+* Mode A para debugar e Mode N para processar internamente  	    *
+***********************************************************************
