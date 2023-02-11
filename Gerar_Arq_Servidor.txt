@@ -1,0 +1,200 @@
+NNNN 11/04/2022  T.MMORAESP    PPTI#2135
+
+v_path TYPE string.
+
+
+SELECTION-SCREEN BEGIN OF BLOCK b3 WITH FRAME.
+PARAMETERS p_server TYPE c AS CHECKBOX.
+PARAMETERS p_path TYPE string DEFAULT '\\polarsu2\'.
+SELECTION-SCREEN END OF BLOCK   b3.
+
+  IF p_server EQ abap_true.
+  IF sy-batch EQ 'X' OR sy-ucomm EQ 'SJOB'.
+    PERFORM z_criar_arquivo. "APPEND lwa_relat TO t_relat.
+  ELSE.
+    CALL SCREEN 9000.
+  ENDIF.
+
+FORM z_criar_arquivo .
+
+* Gerar nome do arquivo
+*  Padrão de nomenclatura do arquivo: epm_zfiscal00_ddmmaaaammss
+
+  DATA: t_tab_csv TYPE truxs_t_text_data,
+        wa_tab_csv(4096) TYPE c.
+
+CONCATENATE p_path
+            'epm_zfiscal00_'
+            sy-datum+6(2) "Dia
+            sy-datum+4(2) "Mes
+            sy-datum(4)   "Ano
+            sy-uzeit
+            '.CSV'   INTO v_path.
+
+* Converte tabela em saída CSV.
+  CALL FUNCTION 'SAP_CONVERT_TO_CSV_FORMAT'
+    EXPORTING
+      i_field_seperator    = ';'
+    TABLES
+      i_tab_sap_data       = o_report->t_relat[] "tabela alv
+    CHANGING
+      i_tab_converted_data = t_tab_csv
+    EXCEPTIONS
+      conversion_failed    = 1
+      OTHERS               = 2.
+
+  IF sy-subrc <> 0.
+    MESSAGE e368(00) WITH text-e01 sy-subrc.
+*    p_erro = 'X'.
+    RETURN.
+  ENDIF.
+
+* Gera Arquivo Servidor
+  IF v_path IS NOT INITIAL.
+    OPEN DATASET v_path FOR OUTPUT IN BINARY MODE.
+
+    LOOP AT t_tab_csv INTO wa_tab_csv.
+      TRANSFER wa_tab_csv TO v_path.
+    ENDLOOP.
+
+    CLOSE DATASET v_path.
+    if sy-subrc eq 0.
+       MESSAGE s368(00) WITH text-s01 sy-subrc.
+      endif.
+  ENDIF.
+
+ENDFORM.
+
+==========================================================================================================================================================
+
+Caso a tabela interna tenha muitos campos e o nmr de linha ultrapasse a quantidade da variavel standard (4000) é necessario fazer
+a concatenação "a mão" separando por ";".
+
+FORM z_criar_arquivo .
+* Gerar nome do arquivo
+*  Padrão de nomenclatura do arquivo: epm_zfiscal00_ddmmaaaammss
+  CONCATENATE p_path
+              'epm_zfiscal00_'
+              sy-datum+6(2) "Dia
+              sy-datum+4(2) "Mes
+              sy-datum(4)   "Ano
+              sy-uzeit
+              '.CSV'   INTO v_path.
+
+  DATA: lv_string TYPE string.
+
+* Gera Arquivo Servidor
+  IF v_path IS NOT INITIAL.
+    OPEN DATASET v_path FOR OUTPUT IN BINARY MODE.
+
+    LOOP AT t_saida_n INTO wa_saida_n.
+      CONCATENATE wa_saida_n-bukrs
+                  wa_saida_n-branch
+                  wa_saida_n-uf_orig
+                  wa_saida_n-docnum
+                  wa_saida_n-subseq
+                  wa_saida_n-nftype
+                  wa_saida_n-num_nota
+                  wa_saida_n-series
+                  wa_saida_n-cnpj
+                  wa_saida_n-cpfsaida
+                  wa_saida_n-codigo
+                  wa_saida_n-razao_soc
+                  wa_saida_n-uf_dest
+                  wa_saida_n-stains
+                  wa_saida_n-pstdat
+                  wa_saida_n-docdat
+                  wa_saida_n-cfop
+                  wa_saida_n-refkey
+                  wa_saida_n-val_cont
+                  wa_saida_n-icms_base
+                  wa_saida_n-icms_aliq
+                  wa_saida_n-icms_imp
+                  wa_saida_n-icms_isent
+                  wa_saida_n-icms_outras
+                  wa_saida_n-ipi_base
+                  wa_saida_n-ipi_aliq
+                  wa_saida_n-ipi_imp
+                  wa_saida_n-ipi_isent
+                  wa_saida_n-ipi_outras
+                  wa_saida_n-cofi_base
+                  wa_saida_n-cofi_aliq
+                  wa_saida_n-cofi_imp
+                  wa_saida_n-cofi_isent
+                  wa_saida_n-cofi_outras
+                  wa_saida_n-pis_base
+                  wa_saida_n-pis_aliq
+                  wa_saida_n-pis_imp
+                  wa_saida_n-pis_isent
+                  wa_saida_n-pis_outras
+                  wa_saida_n-icst_base
+                  wa_saida_n-icst_aliq
+                  wa_saida_n-icst_imp
+                  wa_saida_n-icst_isent
+                  wa_saida_n-icst_outras
+                  wa_saida_n-icop_base
+                  wa_saida_n-icop_aliq
+                  wa_saida_n-icst_outras
+                  wa_saida_n-icop_imp
+                  wa_saida_n-itmnum
+                  wa_saida_n-matnr
+                  wa_saida_n-maktx
+                  wa_saida_n-nbm
+                  wa_saida_n-netpr
+                  wa_saida_n-menge
+                  wa_saida_n-meins
+                  wa_saida_n-peso_liq
+                  wa_saida_n-peso_bruto
+                  wa_saida_n-chave
+                  wa_saida_n-credat
+                  wa_saida_n-cretim
+                  wa_saida_n-crenam
+                  wa_saida_n-matuse
+                  wa_saida_n-matorg
+                  wa_saida_n-taxsit
+                  wa_saida_n-mwskz
+                  wa_saida_n-mva
+                  wa_saida_n-nrecopi
+                  wa_saida_n-cte_strt_lct
+                  wa_saida_n-txt_strt_lct
+                  wa_saida_n-cte_end_lct
+                  wa_saida_n-txt_end_lct
+                  wa_saida_n-cod_transp
+                  wa_saida_n-nome_transp
+                  wa_saida_n-inco1
+                  wa_saida_n-traid
+                  wa_saida_n-prefno
+                  wa_saida_n-id_parceiro
+                  wa_saida_n-municipio
+                  wa_saida_n-docref
+                  wa_saida_n-indpag
+                  wa_saida_n-bsart
+                  wa_saida_n-auart
+                  wa_saida_n-vbeln
+                  wa_saida_n-ernam
+                  wa_saida_n-ean_codigo
+                  wa_saida_n-ean_tributario
+                  wa_saida_n-codpin
+                  wa_saida_n-cest
+                  wa_saida_n-taxlw1
+                  wa_saida_n-taxlw2
+                  wa_saida_n-taxsitout
+                  wa_saida_n-pstyv
+                  wa_saida_n-j_1btxsdc
+                  wa_saida_n-ind_iedest
+                  wa_saida_n-cod_cta
+                  wa_saida_n-fecp
+                  wa_saida_n-fecp_st
+                  wa_saida_n-ort01
+                  INTO lv_string SEPARATED BY ';'.
+      TRANSFER lv_string TO v_path.
+    ENDLOOP.
+
+    CLOSE DATASET v_path.
+    IF sy-subrc EQ 0.
+      MESSAGE s368(00) WITH text-s01 sy-subrc.
+    ENDIF.
+  ENDIF.
+
+
+ENDFORM.
