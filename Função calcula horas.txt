@@ -1,0 +1,30 @@
+
+  DATA:
+    lv_sum        TYPE i,
+    lv_hours(2)   TYPE n,
+    lv_mins(2)    TYPE n,
+    lv_secs(2)    TYPE n,
+    lv_result(20) TYPE c,
+    lv_part(2)    TYPE n.
+
+  CLEAR lv_sum.
+
+
+  lv_part = im_time(2).
+  lv_sum = lv_sum + ( lv_part * 3600 ).
+  lv_part = im_time+2(2).
+  lv_sum = lv_sum + ( lv_part *   60 ).
+  lv_part = im_time+4(2).
+  lv_sum = lv_sum + lv_part.
+
+  IF lv_sum > 3600.
+    lv_hours = floor( lv_sum / 3600 ).
+    lv_sum   = lv_sum - ( lv_hours * 3600 ).
+  ENDIF.
+  IF lv_sum > 60.
+    lv_mins  = floor( lv_sum / 60 ).
+    lv_sum   = lv_sum - ( lv_mins * 60 ).
+  ENDIF.
+  lv_secs = lv_sum.
+
+  CONCATENATE lv_hours lv_mins lv_secs INTO ex_time.
