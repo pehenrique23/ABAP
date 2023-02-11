@@ -1,0 +1,16 @@
+ DATA: ls_sval LIKE LINE OF lt_sval.
+
+    MOVE 'ZKK06' TO ls_sval-tabname.
+    MOVE 'IDGERENTE'  TO ls_sval-fieldname.
+    APPEND ls_sval TO lt_sval.
+    MOVE 'ZKK06' TO ls_sval-tabname.
+    MOVE 'PASSWORD'  TO ls_sval-fieldname.
+    APPEND ls_sval TO lt_sval.
+
+    CALL FUNCTION 'POPUP_GET_VALUES'
+      EXPORTING
+        popup_title  = 'Autenticação'
+        start_column = '5'
+        start_row    = '5'
+      TABLES
+        fields       = lt_sval.
