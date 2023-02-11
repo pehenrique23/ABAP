@@ -1,0 +1,10 @@
+Hi,
+
+
+Replace all occurances of CL_ABAP_CHAR_UTILITIES=>HORIZONTAL_TAB in string with space
+
+or
+
+Replace all occurances of CL_ABAP_CHAR_UTILITIES=>NEWLINE in string with space.
+
+Para alterar o # por espaço vazio é necessario usar ´´ invés de ''.
