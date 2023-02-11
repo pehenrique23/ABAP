@@ -1,0 +1,62 @@
+*&---------------------------------------------------------------------*
+*& Report ZVENDASAG
+*&---------------------------------------------------------------------*
+*&
+*&---------------------------------------------------------------------*
+REPORT zvendasag.
+
+TYPE-POOLS:
+            slis.
+
+CONSTANTS :
+  c_r1(02) TYPE c VALUE 'R1',           "Grupo campo tela seleção
+  c_r2(02) TYPE c VALUE 'R2'            "Grupo campo tela seleção
+  .
+
+*Variaveis*
+DATA: ref_carro TYPE i.
+
+
+*Tabela Interna*
+DATA: gt_zcarros TYPE TABLE OF zcarros.
+DATA: gt_zvendedor TYPE TABLE OF zvendedor.
+
+
+*Work Área/Estrutura
+DATA: gs_zcarros TYPE zcarros.
+DATA: gs_zvendedor TYPE zvendedor.
+
+PARAMETERS: p_rv TYPE ze_refvendedor,
+            p_rc TYPE ze_refcarro.
+
+PERFORM busca.
+
+*&---------------------------------------------------------------------*
+*& Form busca
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM busca .
+  SELECT * FROM zvendedor INTO TABLE gt_zvendedor.
+  LOOP AT gt_zvendedor INTO gs_zvendedor.
+    IF p_rv EQ gs_zvendedor-refvendedor.
+      MOVE gs_zvendedor-refvendedor TO ref_carro.
+    ENDIF.
+  ENDLOOP.
+  PERFORM vendas.
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*& Form vendas
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM vendas.
+
+ENDFORM.
