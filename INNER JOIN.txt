@@ -1,0 +1,8 @@
+  SELECT a~id, a~name, a~form, a~street, a~postbox, a~postcode, a~city,
+         b~customid, b~custtype, b~luggweight, b~reserved
+    FROM ( scustom AS a
+      INNER JOIN sbook AS b
+    ON a~id = b~customid
+    AND a~id  = @so_pass-low
+    AND b~customid = @so_pass-low  )
+    INTO CORRESPONDING FIELDS OF TABLE @gt_dados.
