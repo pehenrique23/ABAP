@@ -1,0 +1,732 @@
+*&---------------------------------------------------------------------*
+*& Report  ZISM009TR01
+*&
+*&---------------------------------------------------------------------*
+REPORT zism009tr01.
+
+*Tipos
+
+TYPE-POOLS:
+            slis.
+
+TYPES:
+BEGIN OF type_carga,
+  linha TYPE c LENGTH 8000,
+END   OF type_carga.
+
+TYPES:
+BEGIN OF type_log,
+  status TYPE icon_d,
+  tp_shdb(20) TYPE c,
+  kschl TYPE a509-kschl,
+  drerz TYPE a509-drerz,
+  pva   TYPE a509-pva,
+  bezisp TYPE a509-bezisp,
+  fkper TYPE a509-fkper,
+  bzperf TYPE a509-bzperf,
+  vkburzus TYPE a509-vkburzus,
+  wrbakt TYPE a512-wrbakt,
+  msg(100) TYPE c,
+  END OF type_log.
+
+TYPES:
+BEGIN OF type_out,
+        kappl      TYPE a509-kappl,      " Aplicação
+        kschl      TYPE a509-kschl,      " Tipo de condição
+        drerz      TYPE a509-drerz,      " Publicação
+        pva        TYPE a509-pva,        " Estrutura da edição
+        bezisp     TYPE a509-bezisp,     " Tipo de aquisição
+        fkper      TYPE a509-fkper,      " Periodicidade de faturamento
+        bzperf     TYPE a509-bzperf,     " IS-M: período de assinatura relevante para faturamento
+        vkburzus   TYPE a509-vkburzus,   " Escrit.vendas responsável
+        wrbakt     TYPE a512-wrbakt,     " Campanha publicitária
+        chave1(35) TYPE c,
+        chave2(42) TYPE c,
+        chave3(40) TYPE c,
+        langtext   TYPE tjw11-langtext,  " Descrição campanha publicitária
+        kfrst      TYPE a509-kfrst,      " Status de liberação
+        datbi      TYPE a509-datbi,      " Fim da validade do registro de condição
+        datab      TYPE a509-datab,      " Início da validade do registro de condição
+        kbstat     TYPE a509-kbstat,     " Status de processamento para condições
+        knumh      TYPE a509-knumh,      " Nº registro de condição
+        kopos      TYPE konp-kopos,      " Nº seqüencial da condiçAO
+        kbetr      TYPE char15,      " Montante/porcentagem de condição no caso de não haver escala
+        vlr_zcap   TYPE char15,      " (DE) Preço de capa - ZCAP
+        vlr_zdca   TYPE char15,      " (DE) Desconto - ZDCA
+        vlr_zdac   TYPE char15,      " (DE) Acrescimo - ZDAC
+        vlr_liq    TYPE char15,      " (DE) Valor liquido (calculado)
+        vlr_amo    TYPE char15,      " (DE) Amortização principal - ZAMO
+        vlr_amodig TYPE char15,      " (DE) Amortização digital - ZAMO ODIG e ESCRITORIO 1009
+        zcap_para   TYPE char15,      " (PARA) Preço de capa - ZCAP
+        zdca_para   TYPE char15,      " (PARA) Desconto - ZDCA
+        zdac_para   TYPE char15,      " (PARA) Acrescimo - ZDAC
+        liq_para    TYPE char15,      " (PARA) Valor liquido (calculado)
+        amo_para    TYPE char15,      " (PARA) Amortização principal - ZAMO
+        amodig_para TYPE char15,      " (PARA) Amortização digital - ZAMO ODIG e ESCRITORIO 1009
+  END OF type_out.
+
+*Variaveis
+DATA: v_repid     LIKE sy-repid.
+DATA: v_layout     TYPE slis_layout_alv.    "layout para saída.
+
+
+*Tabela Interna
+DATA: gt_carga TYPE TABLE OF type_carga,
+      gt_out TYPE TABLE OF type_out,
+      gt_log TYPE TABLE OF type_log,
+      gt_bdcdata TYPE STANDARD TABLE OF bdcdata,
+      gt_message TYPE STANDARD TABLE OF bdcmsgcoll,
+      t_fieldcat   TYPE TABLE OF slis_fieldcat_alv   WITH HEADER LINE,
+      it_event_exit TYPE slis_t_event_exit,
+      t_event  TYPE slis_t_event.
+
+
+*Work Área
+DATA: gs_carga TYPE type_carga,
+      gs_out TYPE type_out,
+      gs_log TYPE type_log,
+      lw_bdcdata TYPE bdcdata,
+      wa_message TYPE bdcmsgcoll,
+      ls_event_exit TYPE slis_event_exit,
+      wa_event      TYPE slis_alv_event,
+      w_fieldcat    TYPE slis_fieldcat_alv.
+
+
+*Macro
+DEFINE bdc_add.
+  clear lw_bdcdata.
+  lw_bdcdata-dynbegin = &1.
+  if &1 eq 'X'.
+    lw_bdcdata-program = &2.
+    lw_bdcdata-dynpro = &3.
+  else.
+    lw_bdcdata-fnam = &2.
+    lw_bdcdata-fval = &3.
+  endif.
+  append lw_bdcdata to gt_bdcdata.
+END-OF-DEFINITION.
+
+
+*Tela de seleção
+SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME.
+PARAMETERS: p_date TYPE sy-datum OBLIGATORY.
+
+SELECTION-SCREEN BEGIN OF BLOCK b2 WITH FRAME.
+"Local
+PARAMETERS:
+p_local TYPE c RADIOBUTTON GROUP g1,
+p_caml TYPE rlgrap-filename
+MEMORY ID arq.
+"Servidor
+PARAMETERS:
+p_serv TYPE c RADIOBUTTON GROUP g1,
+p_cams TYPE rlgrap-filename.
+SELECTION-SCREEN END OF BLOCK b2.
+
+SELECTION-SCREEN END OF BLOCK b1.
+
+
+* AT SELECTION-SCREEN ON
+AT SELECTION-SCREEN ON VALUE-REQUEST FOR p_caml.
+*Procurar arquivo
+  PERFORM f_arq_selecionar_local USING space CHANGING p_caml.
+
+*Inicio
+START-OF-SELECTION.
+  PERFORM carregar_arquivo.
+  IF gt_out[] IS NOT INITIAL.
+    PERFORM atualizar_registros.
+    IF gt_log[] IS NOT INITIAL.
+      PERFORM alv_output.
+    ENDIF.
+  ENDIF.
+
+*&---------------------------------------------------------------------*
+*&      Form  F_ARQ_SELECIONAR_LOCAL
+*&---------------------------------------------------------------------*
+FORM f_arq_selecionar_local  USING    plv_filtro
+                             CHANGING pp_arq TYPE rlgrap-filename.
+
+  DATA: lv_fname       TYPE rlgrap-filename,
+        lv_fpath       TYPE rlgrap-filename,
+        lv_name        TYPE string,
+        lv_path        TYPE string,
+        lv_title       TYPE string,
+        lv_arq         TYPE file_table,
+        lv_subrc       TYPE sy-subrc,
+        lt_filetable   TYPE filetable,
+        lo_gui         TYPE REF TO cl_gui_frontend_services,
+        lv_file_filter TYPE string.
+
+  CONSTANTS:
+    lc_excel TYPE string VALUE 'Arquivos Excel (*.xls*)|*.xls*|', "#EC NOTEXT
+    lc_txt   TYPE string  VALUE 'Arquivos Texto (*.txt*)|*.txt*|'. "#EC NOTEXT
+
+  CASE plv_filtro.
+    WHEN lc_excel.
+      lv_file_filter = lc_excel.
+
+    WHEN lc_txt.
+      lv_file_filter = lc_txt.
+
+    WHEN OTHERS.
+  ENDCASE.
+
+  CREATE OBJECT lo_gui.
+* Split name and path of arq
+  IF pp_arq NE ''.
+    CALL FUNCTION 'SO_SPLIT_FILE_AND_PATH'
+      EXPORTING
+        full_name     = pp_arq
+      IMPORTING
+        stripped_name = lv_fname
+        file_path     = lv_fpath
+      EXCEPTIONS
+        OTHERS        = 0.
+  ELSE.
+    lv_fname = ''.
+    lv_fpath = ''.
+  ENDIF.
+  lv_name = lv_fname.
+  lv_path = lv_fpath.
+
+* Display popup in the path to get arq
+  lv_title = 'Selecionar arquivo'(f01).
+  CALL METHOD lo_gui->file_open_dialog
+    EXPORTING
+      window_title            = lv_title
+      default_filename        = lv_name
+      initial_directory       = lv_path
+      file_filter             = lv_file_filter
+    CHANGING
+      file_table              = lt_filetable
+      rc                      = lv_subrc
+    EXCEPTIONS
+      file_open_dialog_failed = 1
+      cntl_error              = 2
+      error_no_gui            = 3
+      not_supported_by_gui    = 4
+      OTHERS                  = 5.
+  IF ( sy-subrc IS INITIAL ) AND ( lv_subrc = 1 ).
+    READ TABLE lt_filetable INDEX 1 INTO lv_arq.
+    MOVE lv_arq TO pp_arq.
+  ELSE.
+    CLEAR pp_arq.
+  ENDIF.
+  CALL METHOD lo_gui->free.
+
+ENDFORM.                    " F_ARQ_SELECIONAR_LOCAL
+
+
+*&---------------------------------------------------------------------*
+*&      Form  CARREGAR_ARQUIVO
+*&---------------------------------------------------------------------*
+FORM carregar_arquivo .
+
+  DATA: l_arq   TYPE string.
+  DATA: BEGIN OF lt_input_file OCCURS 0,
+        data TYPE string,
+      END OF lt_input_file.
+************************************************
+* Tratamento de leitura de arquivos do local   *
+************************************************
+  IF p_local EQ 'X'.
+    l_arq = p_caml.
+
+    CALL FUNCTION 'GUI_UPLOAD'
+      EXPORTING
+        filename            = l_arq
+        filetype            = 'ASC'
+        has_field_separator = ';'
+      TABLES
+        data_tab            = gt_carga
+      EXCEPTIONS
+        file_open_error     = 1
+        file_read_error     = 2
+        invalid_type        = 3
+        OTHERS              = 4.
+  ELSE.
+************************************************
+* Tratamento de leitura de arquivos do servidor*
+************************************************
+    OPEN DATASET p_cams FOR INPUT IN TEXT MODE ENCODING NON-UNICODE.
+    IF NOT ( sy-subrc IS INITIAL ).
+      MESSAGE e208(00) WITH 'Erro na abertura do arquivo '.
+    ENDIF.
+* Transferir dados do arquivo para a tabela interna
+    DO.
+      IF sy-subrc EQ 0.
+        READ DATASET p_cams INTO lt_input_file-data.
+        APPEND lt_input_file.
+      ELSE.
+        EXIT.
+      ENDIF.
+    ENDDO.
+
+* Fechar arquivo
+    CLOSE DATASET l_arq.
+    IF NOT ( sy-subrc IS INITIAL ).
+      MESSAGE e208(00) WITH 'Erro ao fechar o arquivo'.
+*   Erro ao fechar o arquivo &
+    ENDIF.
+  ENDIF.
+
+  IF NOT sy-subrc IS INITIAL.
+*-- Arquivo não foi aberto corretamente.
+    MESSAGE i208(00) WITH 'Erro ao carregar o arquivo'.
+    STOP.
+  ELSEIF gt_carga[] IS INITIAL.
+*-- Arquivo vazio
+    MESSAGE i208(00) WITH 'Arquivo Vazio!'.
+    STOP.
+
+  ELSE.
+    LOOP AT gt_carga INTO gs_carga.
+      SPLIT gs_carga-linha AT ';' INTO gs_out-kappl
+                                      gs_out-kschl
+                                      gs_out-drerz
+                                      gs_out-pva
+                                      gs_out-bezisp
+                                      gs_out-fkper
+                                      gs_out-bzperf
+                                      gs_out-vkburzus
+                                      gs_out-wrbakt
+                                      gs_out-chave1
+                                      gs_out-chave2
+                                      gs_out-chave3
+                                      gs_out-langtext
+                                      gs_out-kfrst
+                                      gs_out-datbi
+                                      gs_out-datab
+                                      gs_out-kbstat
+                                      gs_out-knumh
+                                      gs_out-kopos
+                                      gs_out-kbetr
+                                      gs_out-vlr_zcap
+                                      gs_out-vlr_zdca
+                                      gs_out-vlr_zdac
+                                      gs_out-vlr_liq
+                                      gs_out-vlr_amo
+                                      gs_out-vlr_amodig
+                                      gs_out-zcap_para
+                                      gs_out-zdca_para
+                                      gs_out-zdac_para
+                                      gs_out-liq_para
+                                      gs_out-amo_para
+                                      gs_out-amodig_para.
+      APPEND gs_out TO gt_out.
+    ENDLOOP.
+  ENDIF.
+ENDFORM.                    " CARREGAR_ARQUIVO
+
+*&---------------------------------------------------------------------*
+*&      Form  ATUALIZAR_REGISTROS
+*&---------------------------------------------------------------------*
+
+FORM atualizar_registros .
+  LOOP AT gt_out INTO gs_out.
+
+*    SE kschl = zdac ou zdca
+    IF gs_out-kschl EQ 'ZDAC' OR gs_out-kschl EQ 'ZDCA'.
+
+*    Chamar shdb com Desconto (zdca_para) para coluna AB do arquivo
+      PERFORM fill_shdb USING 'DESC' gs_out.
+
+*    Chamar shdb com Acrescimo (zdac_para)  para coluna AC do arquivo.
+*    Não pode anular o valor de desconto
+      PERFORM fill_shdb USING 'ACRES' gs_out.
+
+*    Chamar shdb com Amortização Principal (amo_para) coluna AE do arquivo.
+      PERFORM fill_shdb USING 'AMORT' gs_out.
+
+*    Se a Amortização Digital está preenchida
+*    Chamar shdb com Amortização BUNDLE Digital (amodig_para) coluna AF do arquivo.
+      IF gs_out-amodig_para IS NOT INITIAL.
+        PERFORM fill_shdb USING 'DIGIT' gs_out.
+      ENDIF.
+    ELSE.
+
+    ENDIF.
+  ENDLOOP.
+ENDFORM.                    " ATUALIZAR_REGISTROS
+
+*&---------------------------------------------------------------------*
+*&      Form  FILL_SHDB
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*      -->P_GS_OUT  text
+*      <--P_LT_BDCDATA  text
+*----------------------------------------------------------------------*
+FORM fill_shdb  USING   p_tipo
+                        ps_out TYPE type_out.
+  DATA lv_mode TYPE c VALUE 'N'.
+  DATA lv_date(10) TYPE c.
+  CLEAR gt_bdcdata.
+  REFRESH gt_bdcdata.
+  REFRESH gt_message.
+  CONCATENATE p_date+6(2) p_date+4(2) p_date(4) INTO lv_date.
+
+  CASE p_tipo.
+    WHEN 'DESC'.
+      bdc_add 'X' 'SAPMV13A' '0100'.
+      bdc_add '' 'BDC_OKCODE' '/00'.
+      bdc_add '' 'RV130-KAPPL' 'J0'.
+      bdc_add '' 'RV13A-KSCHL' ps_out-kschl. "<- ZDCA
+      bdc_add '' 'RV13A-KOTABNR' '512'.
+
+      bdc_add 'X' 'SAPMV13A' '1512'.
+      bdc_add '' 'BDC_OKCODE' '/00'.
+      bdc_add '' 'KOMG-DRERZ(01)' 'OESP'.
+      bdc_add '' 'KOMG-PVA(01)' ps_out-pva.
+      bdc_add '' 'KOMG-BEZISP(01)' ps_out-bezisp.
+      bdc_add '' 'KOMG-FKPER(01)' ps_out-fkper.
+      bdc_add '' 'KOMG-BZPERF(01)' ps_out-bzperf.
+      bdc_add '' 'KOMG-VKBURZUS(01)' ps_out-vkburzus.
+      bdc_add '' 'KOMG-WRBAKT(01)' ps_out-wrbakt.
+      bdc_add '' 'KONP-KBETR(01)' ps_out-zdca_para. "<- Lançamento de Desconto
+      bdc_add '' 'KONP-KONWA(01)' 'BRL'.
+      bdc_add '' 'KONP-KPEIN(01)' '1'.
+      bdc_add '' 'KONP-KMEIN(01)' 'PEÇ'.
+      bdc_add '' 'RV13A-DATAB(01)' lv_date.
+
+      bdc_add 'X' 'SAPMV13A' '1512'.
+      bdc_add '' 'BDC_OKCODE' '=SICH'.
+
+      CALL TRANSACTION 'JCS0' USING gt_bdcdata MESSAGES INTO gt_message MODE lv_mode.
+
+    WHEN 'ACRES'.
+      bdc_add 'X' 'SAPMV13A' '0100'.
+      bdc_add '' 'BDC_OKCODE' '/00'.
+      bdc_add '' 'RV130-KAPPL' 'J0'.
+      bdc_add '' 'RV13A-KSCHL' 'ZDAC'. "<- ZDAC
+      bdc_add '' 'RV13A-KOTABNR' '512'.
+
+      bdc_add 'X' 'SAPMV13A' '1512'.
+      bdc_add '' 'BDC_OKCODE' '/00'.
+      bdc_add '' 'KOMG-DRERZ(01)' 'OESP'.
+      bdc_add '' 'KOMG-PVA(01)' ps_out-pva.
+      bdc_add '' 'KOMG-BEZISP(01)' ps_out-bezisp.
+      bdc_add '' 'KOMG-FKPER(01)' ps_out-fkper.
+      bdc_add '' 'KOMG-BZPERF(01)' ps_out-bzperf.
+      bdc_add '' 'KOMG-VKBURZUS(01)' ps_out-vkburzus.
+      bdc_add '' 'KOMG-WRBAKT(01)' ps_out-wrbakt.
+      bdc_add '' 'KONP-KBETR(01)' ps_out-zdac_para . "<- Acréscimo
+      bdc_add '' 'KONP-KONWA(01)' 'BRL'.
+      bdc_add '' 'KONP-KPEIN(01)' '1'.
+      bdc_add '' 'KONP-KMEIN(01)' 'PEÇ'.
+      bdc_add '' 'RV13A-DATAB(01)' lv_date.
+
+      bdc_add 'X' 'SAPMV13A' '1512'.
+      bdc_add '' 'BDC_OKCODE' '=SICH'.
+
+      CALL TRANSACTION 'JCS0' USING gt_bdcdata MESSAGES INTO gt_message MODE  lv_mode.
+
+    WHEN 'AMORT'.
+      bdc_add 'X' 'SAPMV13A' '0100'.
+      bdc_add '' 'BDC_OKCODE' '/00'.
+      bdc_add '' 'RV130-KAPPL' 'J0'.
+      bdc_add '' 'RV13A-KSCHL' 'ZAMO'. "<- ZAMO
+      bdc_add '' 'RV13A-KOTABNR' '512'.
+
+      bdc_add 'X' 'SAPMV13A' '1512'.
+      bdc_add '' 'BDC_OKCODE' '/00'.
+      bdc_add '' 'KOMG-DRERZ(01)' 'OESP'.
+      bdc_add '' 'KOMG-PVA(01)' ps_out-pva.
+      bdc_add '' 'KOMG-BEZISP(01)' ps_out-bezisp.
+      bdc_add '' 'KOMG-FKPER(01)' ps_out-fkper.
+      bdc_add '' 'KOMG-BZPERF(01)' ps_out-bzperf.
+      bdc_add '' 'KOMG-VKBURZUS(01)' ps_out-vkburzus.
+      bdc_add '' 'KOMG-WRBAKT(01)' ps_out-wrbakt.
+      bdc_add '' 'KONP-KBETR(01)' ps_out-amo_para . "<- Amortização Principal
+      bdc_add '' 'KONP-KONWA(01)' 'BRL'.
+      bdc_add '' 'KONP-KPEIN(01)' '1'.
+      bdc_add '' 'KONP-KMEIN(01)' 'PEÇ'.
+      bdc_add '' 'RV13A-DATAB(01)' lv_date.
+
+      bdc_add 'X' 'SAPMV13A' '1512'.
+      bdc_add '' 'BDC_OKCODE' '=SICH'.
+
+      CALL TRANSACTION 'JCS0' USING gt_bdcdata MESSAGES INTO gt_message MODE  lv_mode.
+
+    WHEN 'DIGIT'.
+      bdc_add 'X' 'SAPMV13A' '0100'.
+      bdc_add '' 'BDC_OKCODE' '/00'.
+      bdc_add '' 'RV130-KAPPL' 'J0'.
+      bdc_add '' 'RV13A-KSCHL' 'ZAMO'. "<- ZAMO
+      bdc_add '' 'RV13A-KOTABNR' '512'.
+
+      bdc_add 'X' 'SAPMV13A' '1512'.
+      bdc_add '' 'BDC_OKCODE' '/00'.
+      bdc_add '' 'KOMG-DRERZ(01)' 'OESP'.
+*      bdc_add '' 'KOMG-PVA(01)' ps_out-pva.
+      bdc_add '' 'KOMG-PVA(01)' 'ODIG'.
+      bdc_add '' 'KOMG-BEZISP(01)' ps_out-bezisp.
+      bdc_add '' 'KOMG-FKPER(01)' ps_out-fkper.
+      bdc_add '' 'KOMG-BZPERF(01)' ps_out-bzperf.
+      bdc_add '' 'KOMG-VKBURZUS(01)' ps_out-vkburzus.
+      bdc_add '' 'KOMG-WRBAKT(01)' ps_out-wrbakt.
+      bdc_add '' 'KONP-KBETR(01)' ps_out-amodig_para . "<- Amortização Bundle Digital
+      bdc_add '' 'KONP-KONWA(01)' 'BRL'.
+      bdc_add '' 'KONP-KPEIN(01)' '1'.
+      bdc_add '' 'KONP-KMEIN(01)' 'PEÇ'.
+      bdc_add '' 'RV13A-DATAB(01)' lv_date.
+
+      bdc_add 'X' 'SAPMV13A' '1512'.
+      bdc_add '' 'BDC_OKCODE' '=SICH'.
+
+      CALL TRANSACTION 'JCS0' USING gt_bdcdata MESSAGES INTO gt_message MODE  lv_mode.
+  ENDCASE.
+
+  IF NOT gt_message[] IS INITIAL.
+    LOOP AT gt_message INTO wa_message WHERE msgtyp = 'E'.
+
+      "Check mensagem de Erro
+*      IF sy-subrc EQ 0.
+        PERFORM grava_log USING 'E' ps_out p_tipo.
+*      ENDIF.
+      EXIT.
+    ENDLOOP.
+
+    "Check mensagem de Sucesso
+    IF sy-subrc NE 0.
+      CLEAR wa_message.
+      READ TABLE gt_message INTO wa_message WITH KEY msgid = 'VK'
+                                                     msgnr = '023'.
+      IF sy-subrc EQ 0.
+        PERFORM grava_log USING 'S' ps_out p_tipo.
+      ELSE.
+        PERFORM grava_log USING 'E' ps_out p_tipo.
+      ENDIF.
+    ENDIF.
+
+  ENDIF.
+
+ENDFORM.                    " FILL_SHDB
+
+*&---------------------------------------------------------------------*
+*&      Form  GRAVA_LOG
+*&---------------------------------------------------------------------*
+FORM grava_log  USING  value(p_msgtyp)
+                         p_out TYPE type_out p_tipo.
+  DATA lv_message TYPE natxt.
+
+  CALL FUNCTION 'MESSAGE_TEXT_BUILD'
+    EXPORTING
+      msgid               = wa_message-msgid
+      msgnr               = wa_message-msgnr
+*     MSGV1               = ' '
+*     MSGV2               = ' '
+*     MSGV3               = ' '
+*     MSGV4               = ' '
+    IMPORTING
+      message_text_output = lv_message.
+
+  "Check se o kschl é igual a ZDAC OU ZDAC
+  IF gs_out-kschl EQ 'ZDAC' OR gs_out-kschl EQ 'ZDCA'.
+
+    "Mesagem de Erro
+    IF p_msgtyp EQ 'E'.
+      IF lv_message IS INITIAL.
+        lv_message = 'ERRO NO PROCESSAMENTO'.
+      ENDIF.
+      MOVE-CORRESPONDING p_out TO  gs_log.
+      gs_log-status = '@02@'.
+      gs_log-msg = lv_message.
+
+      "Seleciona tipo de SHDB
+      CASE p_tipo.
+        WHEN 'DESC'.
+          MOVE 'Desconto' TO gs_log-tp_shdb.
+        WHEN 'ACRES'.
+          MOVE 'Acréscimo' TO gs_log-tp_shdb.
+        WHEN 'AMORT'.
+          MOVE 'Amort. Principal' TO gs_log-tp_shdb.
+        WHEN 'DIGIT'.
+          MOVE 'Amort. Digital' TO gs_log-tp_shdb.
+      ENDCASE.
+      APPEND gs_log TO gt_log.
+    ENDIF.
+
+    "Mesagem de Sucesso
+    IF p_msgtyp EQ 'S'.
+      MOVE-CORRESPONDING p_out TO  gs_log.
+      gs_log-status = '@01@'.
+      gs_log-msg = 'Gravado com Sucesso.'.
+
+      "Seleciona tipo de SHDB
+      CASE p_tipo.
+        WHEN 'DESC'.
+          MOVE 'Desconto' TO gs_log-tp_shdb.
+        WHEN 'ACRES'.
+          MOVE 'Acréscimo' TO gs_log-tp_shdb.
+        WHEN 'AMORT'.
+          MOVE 'Amort. Principal' TO gs_log-tp_shdb.
+        WHEN 'DIGIT'.
+          MOVE 'Amort. Digital' TO gs_log-tp_shdb.
+      ENDCASE.
+      APPEND gs_log TO gt_log.
+    ENDIF.
+  ELSE.
+    "Se kschl for diferente de ZDCA OU ZDAC
+    MOVE-CORRESPONDING p_out TO  gs_log.
+    gs_log-status = '@02@'.
+    gs_log-msg = 'Tipo de condição inválido'.
+
+    "Seleciona tipo de SHDB
+    CASE p_tipo.
+      WHEN 'DESC'.
+        MOVE 'Desconto' TO gs_log-tp_shdb.
+      WHEN 'ACRES'.
+        MOVE 'Acréscimo' TO gs_log-tp_shdb.
+      WHEN 'AMORT'.
+        MOVE 'Amort. Principal' TO gs_log-tp_shdb.
+      WHEN 'DIGIT'.
+        MOVE 'Amort. Digital' TO gs_log-tp_shdb.
+    ENDCASE.
+    APPEND gs_log TO gt_log.
+  ENDIF.
+ENDFORM.                    " GRAVA_LOG
+
+*&---------------------------------------------------------------------*
+*&      Form  ALV_OUTPUT
+*&---------------------------------------------------------------------*
+FORM alv_output .
+  v_layout-zebra             = 'X'.   "Layout Zebra
+  v_layout-expand_all        = 'X'.   "Abrir subitens
+  v_layout-colwidth_optimize = 'X'.   "Largura melhor possível
+*  v_layout-box_fieldname     = 'SEL'. "Coluna Selecionável
+*  v_layout-edit              = 'X'.   "Permitir a edição
+*  v_grid-edt_cll_cb          = 'X'.   "Callback ao encerrar uma célula editada
+
+*  v_print-no_print_listinfos = 'X'.
+
+
+  ls_event_exit-ucomm = '&ILT'.
+  ls_event_exit-after = abap_true.
+  APPEND ls_event_exit TO it_event_exit.
+
+  CLEAR wa_event.
+  wa_event-name = 'TOP_OF_PAGE'.
+  wa_event-form = 'TOP_OF_PAGE'.
+  APPEND wa_event TO t_event.
+
+
+  PERFORM zf_field_cat USING  'STATUS'    'GT_LOG'   'Status' ' ' '' '' ' ' '' '' '' ''.
+  PERFORM zf_field_cat USING  'KSCHL'    'GT_LOG'   'Tipo de Condição' ' ' '' '' ' ' '' '' '' ''.
+  PERFORM zf_field_cat USING  'DRERZ'    'GT_LOG'   'Publicação' ' ' '' '' ' ' '' '' '' ''.
+  PERFORM zf_field_cat USING  'PVA'    'GT_LOG'   'Estr. de Edição' ' ' '' '' ' ' '' '' '' ''.
+  PERFORM zf_field_cat USING  'BEZISP'    'GT_LOG'   'Tipo de Aquisição' ' ' '' '' ' ' '' '' '' ''.
+  PERFORM zf_field_cat USING  'FKPER'    'GT_LOG'   'Periodicidade de Fat.' ' ' '' '' ' ' '' '' '' ''.
+  PERFORM zf_field_cat USING  'BZPERF'    'GT_LOG'   'Periodo de Aquisição' ' ' '' '' ' ' '' '' '' ''.
+  PERFORM zf_field_cat USING  'VKBURZUS'   'GT_LOG'   'Escritório de Vendas' ' ' '' '' ' ' '' '' '' ''.
+  PERFORM zf_field_cat USING  'WRBAKT'    'GT_LOG'   'Campanha' ' ' '' '' ' ' '' '' '' ''.
+  PERFORM zf_field_cat USING  'MSG'    'GT_LOG'   'Mensagem' ' ' '' '' ' ' '' '' '' ''.
+  PERFORM zf_field_cat USING  'TP_SHDB'    'GT_LOG'   'Tipo SHDB' ' ' '' '' ' ' '' '' '' ''.
+
+
+  CALL FUNCTION 'REUSE_ALV_GRID_DISPLAY'
+    EXPORTING
+      i_callback_program       = sy-repid
+*     i_callback_top_of_page   = 'TOP_OF_PAGE'
+      i_callback_pf_status_set = 'PF_STATUS_SET'
+      is_layout                = v_layout
+      it_fieldcat              = t_fieldcat[]
+*     it_sort                  = t_sort[]
+      it_event_exit            = it_event_exit[]
+      it_events                = t_event[]
+    TABLES
+      t_outtab                 = gt_log[]
+    EXCEPTIONS
+      program_error            = 1
+      OTHERS                   = 2.
+
+ENDFORM.                    " ALV_OUTPUT
+
+*&---------------------------------------------------------------------*
+*&      Form  zf_field_cat
+*&---------------------------------------------------------------------*
+FORM zf_field_cat     USING p_fieldname TYPE any
+
+      p_tabname       TYPE any
+      p_seltext_l     TYPE any
+      p_checkbox      TYPE any
+      p_ref_fieldname TYPE any
+      p_ref_tabname   TYPE any
+      p_outputlen     TYPE any
+      p_input         TYPE any
+      p_hotspot       TYPE any
+      p_do_sum        TYPE any
+      p_no_out        TYPE any.
+
+  w_fieldcat-fieldname     = p_fieldname.
+  w_fieldcat-tabname       = p_tabname.
+  w_fieldcat-seltext_m     = p_seltext_l.
+  w_fieldcat-checkbox      = p_checkbox.
+  w_fieldcat-ref_fieldname = p_ref_fieldname.
+  w_fieldcat-ref_tabname   = p_ref_tabname.
+  w_fieldcat-outputlen     = p_outputlen.
+  w_fieldcat-edit          = p_input.
+  w_fieldcat-hotspot       = p_hotspot.
+  w_fieldcat-do_sum        = p_do_sum .
+  w_fieldcat-no_out        = p_no_out .
+
+  APPEND w_fieldcat TO t_fieldcat.
+  CLEAR w_fieldcat.
+
+ENDFORM.                    "zf_field_cat
+
+*&---------------------------------------------------------------------*
+*&      Form  pf_status_set
+*&---------------------------------------------------------------------*
+FORM pf_status_set USING t_extab TYPE slis_t_extab.
+
+  SET PF-STATUS 'STANDARD_FULLSCREEN'.
+
+ENDFORM.                    " zf_set_status
+
+*&---------------------------------------------------------------------*
+*&      Form  top_of_page
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+FORM top_of_page.
+
+  DATA: lo_grid TYPE REF TO cl_gui_alv_grid.
+  DATA: lt_heading TYPE slis_t_listheader WITH HEADER LINE.
+
+* get the global reference
+  CALL FUNCTION 'GET_GLOBALS_FROM_SLVC_FULLSCR'
+    IMPORTING
+      e_grid = lo_grid.
+
+* Refresh the table display
+  CALL METHOD lo_grid->refresh_table_display
+    EXPORTING
+      i_soft_refresh = 'X'.
+
+  CLEAR lt_heading[].
+  CLEAR lt_heading.
+  lt_heading-typ = 'H'.
+  lt_heading-info = 'LOG DE ERROS' .
+  APPEND  lt_heading.
+
+* Date of execution
+  CLEAR lt_heading.
+  lt_heading-typ = 'S'.
+  lt_heading-key = 'Data: '.
+  WRITE sy-datum TO lt_heading-info.
+  APPEND lt_heading.
+
+* Time of execution
+  CLEAR lt_heading.
+  lt_heading-typ = 'S'.
+  lt_heading-key = 'Hora: '.
+  WRITE sy-uzeit TO lt_heading-info.
+  APPEND   lt_heading.
+
+  CALL FUNCTION 'REUSE_ALV_COMMENTARY_WRITE'
+    EXPORTING
+      it_list_commentary = lt_heading[].
+
+ENDFORM.                    " top_of_page
