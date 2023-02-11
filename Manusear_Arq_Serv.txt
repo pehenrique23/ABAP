@@ -1,0 +1,206 @@
+Copiar arquivo entre Unix e Local, e também eliminar
+Já precisou copiar aquele arquivo para o servidor para testar seu desenvolvimento né? 
+Ou então enviar um arquivo para o servidor. Pois bem, este código faz isto, e ainda por cima também elimina, 
+converte em texto ou binário, manda de Unix para Local, Local para Unix, Unix para Unix. Tudo isto e mais um pouco.
+
+********************
+*REPORT ZSAPeiros. *
+********************
+
+*********************************************************************************
+* COPIAR ARQUIVOS DO UNIX PARA LOCAL E VICE-VERSA
+*********************************************************************************
+*&---------------------------------------------------------------------*
+* Tela de seleção
+*&---------------------------------------------------------------------*
+PARAMETERS: p_origem  LIKE rlgrap-filename OBLIGATORY,
+            p_destin  LIKE rlgrap-filename OBLIGATORY,
+            p_get     RADIOBUTTON GROUP g0,
+            p_put     RADIOBUTTON GROUP g0,
+            p_unix    RADIOBUTTON GROUP g0,
+            p_deleta  AS CHECKBOX,
+            p_tex     RADIOBUTTON GROUP g1,
+            p_bin     RADIOBUTTON GROUP g1.
+
+
+*&---------------------------------------------------------------------*
+*Initialization
+*&---------------------------------------------------------------------*
+INITIALIZATION.
+  %_p_origem_%_app_%-text   = 'Arquivo de Origem'.
+  %_p_destin_%_app_%-text   = 'Arquivo de Destino'.
+  %_p_get_%_app_%-text      = 'Copiar do UNIX para PC'.
+  %_p_put_%_app_%-text      = 'Copiar do PC para o UNIX'.
+  %_p_unix_%_app_%-text     = 'Copiar do UNIX para UNIX'.
+  %_p_deleta_%_app_%-text   = 'Deletar Arquivo Origem'.
+  %_p_tex_%_app_%-text      = 'Arquivo Texto'.
+  %_p_bin_%_app_%-text      = 'Arquivo Binário'.
+
+
+*&---------------------------------------------------------------------*
+* Tabelas Internas
+*&---------------------------------------------------------------------*
+  DATA: tg_file(1200) TYPE c OCCURS 0 WITH HEADER LINE.
+
+
+*&---------------------------------------------------------------------*
+* Variáveis
+*&---------------------------------------------------------------------*
+  DATA: vg_filename   TYPE string,
+        vg_texto(100) type c.
+
+
+*&---------------------------------------------------------------------*
+*Start-of-selection
+*&---------------------------------------------------------------------*
+START-OF-SELECTION.
+  IF p_get = 'X'.
+    PERFORM get_unix.        "Copiar do UNIX  para o Local
+  ELSEIF p_unix = 'X'.
+    PERFORM move_unix.       "Copiar do UNIX  para o UNIX
+  ELSE.
+    PERFORM put_unix.        "Copiar do Local para o UNIX
+  ENDIF.
+
+
+*&---------------------------------------------------------------------*
+*&      Form  get_unix
+*&---------------------------------------------------------------------*
+FORM get_unix.
+  clear vg_filename.
+  vg_filename = p_destin.
+
+  IF p_tex = 'X'.
+    OPEN DATASET p_origem FOR INPUT IN TEXT MODE ENCODING DEFAULT.
+  ELSE.
+    OPEN DATASET p_origem FOR INPUT IN BINARY MODE.
+  ENDIF.
+
+  IF sy-subrc NE 0.
+    WRITE: / 'Erro na abertura do arquivo UNIX'.
+    EXIT.
+  ENDIF.
+
+  DO.
+    READ DATASET p_origem INTO tg_file.
+    IF sy-subrc NE 0.
+      EXIT.
+    ENDIF.
+    APPEND tg_file.
+  ENDDO.
+
+  CLOSE DATASET p_origem.
+
+  CHECK sy-subrc = 0.
+
+  CALL FUNCTION 'GUI_DOWNLOAD'
+    EXPORTING
+      filename = vg_filename
+      filetype = 'ASC'
+    TABLES
+      data_tab = tg_file
+    EXCEPTIONS
+      OTHERS   = 8.
+
+  IF sy-subrc NE 0.
+    WRITE: / 'Erro no Download do arquivo local'.
+  ELSE.
+    WRITE: / 'Transferência p/o Local executada com sucesso!'.
+    IF p_deleta = 'X'.
+      DELETE DATASET p_origem.
+      IF NOT sy-subrc IS INITIAL.
+        WRITE: /  'Erro ao deletar Arquivo Origem!'.
+      ELSE.
+        WRITE: / 'Arquivo Origem deletado com sucesso!'.
+      ENDIF.
+    ENDIF.
+  ENDIF.
+ENDFORM.                    "get_unix
+
+
+*&---------------------------------------------------------------------*
+*&      Form  put_unix
+*&---------------------------------------------------------------------*
+FORM put_unix.
+  clear vg_filename.
+  vg_filename = p_origem.
+
+  CALL FUNCTION 'GUI_UPLOAD'
+    EXPORTING
+      filename = vg_filename
+      filetype = 'ASC'
+    TABLES
+      data_tab = tg_file
+    EXCEPTIONS
+      OTHERS   = 8.
+
+  IF sy-subrc NE 0.
+    WRITE: / 'Erro no Upload do arquivo local'.
+    EXIT.
+  ENDIF.
+
+  IF p_tex = 'X'.
+    OPEN DATASET p_destin FOR OUTPUT IN TEXT MODE ENCODING DEFAULT.
+  ELSE.
+    OPEN DATASET p_destin FOR OUTPUT IN BINARY MODE.
+  ENDIF.
+
+  IF sy-subrc NE 0.
+    WRITE: / 'Erro na abertura do arquivo UNIX'.
+    EXIT.
+  ENDIF.
+
+  LOOP AT tg_file.
+    TRANSFER tg_file TO p_destin.
+  ENDLOOP.
+
+  CLOSE DATASET p_destin.
+
+  WRITE: / 'Transferência p/o UNIX executada com sucesso!'.
+ENDFORM.                    "put_unix
+
+
+*&---------------------------------------------------------------------*
+*&      Form  move_unix
+*&---------------------------------------------------------------------*
+FORM move_unix.
+  OPEN DATASET p_origem FOR INPUT IN TEXT MODE ENCODING DEFAULT.
+
+  clear vg_texto(100).
+
+  IF sy-subrc NE 0.
+    CONCATENATE 'Erro na abertura do arquivo:' p_origem
+    INTO vg_texto SEPARATED BY space.
+    WRITE:/ vg_texto COLOR COL_NEGATIVE INTENSIFIED OFF.
+    EXIT.
+  ENDIF.
+
+  OPEN DATASET p_destin FOR OUTPUT IN TEXT MODE ENCODING DEFAULT.
+
+  IF sy-subrc NE 0.
+    CONCATENATE 'Erro na abertura do arquivo:' p_destin
+    INTO vg_texto SEPARATED BY space.
+    WRITE:/ vg_texto COLOR COL_NEGATIVE INTENSIFIED OFF.
+    EXIT.
+  ENDIF.
+
+  WHILE sy-subrc EQ 0.
+    READ DATASET p_origem INTO tg_file.
+    IF sy-subrc EQ 0.
+      TRANSFER tg_file TO p_destin.
+    ENDIF.
+  ENDWHILE.
+
+  CLOSE DATASET p_origem.
+
+  IF sy-subrc EQ 0.
+    IF NOT p_deleta IS INITIAL.
+      DELETE DATASET p_origem.
+    ENDIF.
+    CONCATENATE 'O arquivo' p_origem 'foi movido para' p_destin
+           INTO vg_texto SEPARATED BY space.
+    WRITE:/ vg_texto COLOR COL_POSITIVE INTENSIFIED OFF.
+  ENDIF.
+
+  CLOSE DATASET p_destin.
+ENDFORM.                    "move_unix
