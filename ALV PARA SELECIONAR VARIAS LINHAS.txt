@@ -1,0 +1,165 @@
+*&---------------------------------------------------------------------*
+*& Report Z_REL_SCARR
+*&---------------------------------------------------------------------*
+*&
+*&---------------------------------------------------------------------*
+REPORT z_rel_scarr.
+
+TYPES: BEGIN OF ty_scarr,
+         sel      TYPE char01,
+         carrid   TYPE scarr-carrid,
+         carrname TYPE scarr-carrname,
+       END OF ty_scarr.
+
+DATA: gt_scarr TYPE TABLE OF ty_scarr.
+
+* Tabela Interna*
+DATA t_fieldcat   TYPE TABLE OF slis_fieldcat_alv   WITH HEADER LINE.
+DATA: it_event_exit TYPE slis_t_event_exit.
+DATA: t_event  TYPE slis_t_event.
+
+*Estrutura*
+DATA: ls_event_exit TYPE slis_event_exit,
+      wa_event      TYPE slis_alv_event,
+      w_fieldcat    TYPE slis_fieldcat_alv.
+
+
+PERFORM zp_seleciona_dados.
+PERFORM zp_imprime_dados.
+
+*&---------------------------------------------------------------------*
+*& Form zp_seleciona_dados
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM zp_seleciona_dados .
+  SELECT *
+    FROM scarr
+    INTO CORRESPONDING FIELDS OF TABLE gt_scarr.
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*& Form zp_imprime_dados
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM zp_imprime_dados .
+
+  DATA: lay      TYPE slis_layout_alv,
+        evt      TYPE slis_t_event,
+        cat      TYPE slis_t_fieldcat_alv,
+        lv_repid TYPE sy-repid.
+
+  DATA:    g_vari LIKE disvariant.                          "1033838
+
+  DATA: lv_excluding TYPE slis_extab.
+  DATA: lt_excluding TYPE STANDARD TABLE OF slis_extab.
+  DATA: lc_glay TYPE lvc_s_glay.
+  DATA: lt_event     TYPE STANDARD TABLE OF slis_alv_event.
+  DATA: lv_event     TYPE slis_alv_event.
+
+* Build necessary structures
+  PERFORM buildlay USING lay.
+  PERFORM buildevt USING evt.
+
+  PERFORM zf_field_cat USING  'SEL'   'GT_SCARR'   '' 'X' '' '' ' ' 'X' 'X' '' '' '' 'X '.
+  PERFORM zf_field_cat USING  'CARRID'   'GT_SCARR'   'Doc. Vendas' ' ' '' '' ' ' '' '' '' '' '' ''.
+  PERFORM zf_field_cat USING  'CARRNAME' 'GT_SCARR'   'Dta. Criação' ' ' '' '' ' ' '' '' '' '' '' ''.
+
+  lc_glay-edt_cll_cb = 'X'.
+
+  CALL FUNCTION 'REUSE_ALV_GRID_DISPLAY'
+    EXPORTING
+      i_grid_settings          = lc_glay
+      i_callback_program       = lv_repid
+      i_callback_pf_status_set = 'SET_STAT'
+      i_callback_user_command  = 'USE_COMMAND'
+      is_layout                = lay
+      it_fieldcat              = T_FIELDcat[]
+      i_save                   = 'A'                        "1019245
+      it_excluding             = lt_excluding[]
+      is_variant               = g_vari                     "1033838
+      it_events                = lt_event
+    TABLES
+      t_outtab                 = gt_scarr.
+
+ENDFORM.
+
+*&--------------------------------------------------------------------*
+*&      Form  buildlay
+*&--------------------------------------------------------------------*
+*       Sets zebra layout for the ALV List
+*---------------------------------------------------------------------*
+*      -->LAY        Layout
+*---------------------------------------------------------------------*
+FORM buildlay USING lay TYPE slis_layout_alv.
+  lay-zebra     = 'X'.
+*  lay-edit_mode = 'X'.
+*  lay-edit      = 'X'.
+*  lay-no_input  = 'X'.
+
+ENDFORM.                    "buildlay
+
+*&--------------------------------------------------------------------*
+*       handling for event TOP-OF-PAGE
+*---------------------------------------------------------------------*
+*      -->EVT        Event list
+*---------------------------------------------------------------------*
+FORM buildevt USING evt TYPE slis_t_event.
+
+ENDFORM.                    "buildevt
+
+*&---------------------------------------------------------------------*
+*& Form zf_field_cat
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*&      --> P_
+*&      --> P_
+*&      --> P_
+*&      --> P_
+*&      --> P_
+*&      --> P_
+*&      --> P_
+*&      --> P_
+*&      --> P_
+*&      --> P_
+*&      --> P_
+*&---------------------------------------------------------------------*
+FORM zf_field_cat     USING p_fieldname TYPE any
+      p_tabname       TYPE any
+      p_seltext_l     TYPE any
+      p_checkbox      TYPE any
+      p_ref_fieldname TYPE any
+      p_ref_tabname   TYPE any
+      p_outputlen     TYPE any
+      p_edit         TYPE any
+      p_input         TYPE any
+      p_hotspot       TYPE any
+      p_do_sum        TYPE any
+      p_no_out        TYPE any
+      p_key_sel        TYPE any.
+
+  w_fieldcat-fieldname     = p_fieldname.
+  w_fieldcat-tabname       = p_tabname.
+  w_fieldcat-seltext_m     = p_seltext_l.
+  w_fieldcat-checkbox      = p_checkbox.
+  w_fieldcat-ref_fieldname = p_ref_fieldname.
+  w_fieldcat-ref_tabname   = p_ref_tabname.
+  w_fieldcat-outputlen     = p_outputlen.
+  w_fieldcat-edit          = p_edit.
+  w_fieldcat-hotspot       = p_hotspot.
+  w_fieldcat-do_sum        = p_do_sum .
+  w_fieldcat-no_out        = p_no_out .
+  w_fieldcat-input        = p_input .
+  w_fieldcat-key_sel        = p_key_sel .
+
+  APPEND w_fieldcat TO t_fieldcat.
+  CLEAR w_fieldcat.
+ENDFORM.
