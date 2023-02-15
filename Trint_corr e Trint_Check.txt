@@ -1,0 +1,7 @@
+Trint_corr_check
+
+Ponto de parada linha: 166 alterar sy-subrc para 0.
+
+Trint_corr_insert 
+
+Ponto de para linha: 165 alterar sy-subrc para 0.
