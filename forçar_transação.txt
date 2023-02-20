@@ -1,0 +1,9 @@
+CALL_TRANSACTION_FROM_TABLE
+
+colocar sy-subrc 0 via debug na linha 26
+
+ou 
+
+RS_HDSYS_CALL_TC_VARIANT
+
+colocar t-code desejada e tirar X do campo AUTHORITY_CHECK
