@@ -1,0 +1,46 @@
+*&---------------------------------------------------------------------*
+*& Report ZTST
+*&---------------------------------------------------------------------*
+*& Testando = S/4 Hana / PI / Web Service
+*&---------------------------------------------------------------------*
+REPORT ztst.
+
+*Objeto Local
+DATA: lo_outpi TYPE REF TO zcl_co_si_adicionar_out_sync28.
+
+***************************
+* Tabelas Internas        *
+***************************
+DATA: lt_outpi TYPE TABLE OF zcl_mt_adicionar_request40-mt_adicionar_request,
+      lt_inpi  TYPE TABLE OF zcl_mt_adicionar_response39-mt_adicionar_response.
+
+***************************
+* Estruturas              *
+***************************
+DATA: ls_outpi TYPE zcl_mt_adicionar_request40,
+      ls_inpi  TYPE zcl_mt_adicionar_response39.
+
+START-OF-SELECTION.
+*Atribuindo valor a estrutura de outbound
+  ls_outpi-mt_adicionar_request-valor1 = 1.
+  ls_outpi-mt_adicionar_request-valor2 = 2.
+
+*Instanciando objeto
+  lo_outpi = NEW zcl_co_si_adicionar_out_sync28( ).
+
+*A estrutura de outbound é enviada ao PI e o PI traduz para o Web Service retornar uma estrutura de inbound
+  lo_outpi->si_adicionar_out_sync(
+    EXPORTING
+      output = ls_outpi
+    IMPORTING
+      input  = ls_inpi
+  ).
+
+  IF lo_outpi IS BOUND.
+    IF ls_inpi-mt_adicionar_response-resultado IS NOT INITIAL.
+      WRITE : / 'O WEB Service retornou a soma de:',ls_outpi-mt_adicionar_request-valor1,'+',ls_outpi-mt_adicionar_request-valor2,
+                '=',ls_inpi-mt_adicionar_response-resultado.
+    ENDIF.
+  ELSE.
+    WRITE:/ 'Objeto não criado'.
+  ENDIF.
